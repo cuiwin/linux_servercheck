@@ -43,7 +43,7 @@ linux_server_check/
 
 1. 克隆项目：
    ```bash
-   git clone https://github.com/cuiwin/linux_server_check.git
+   git clone https://github.com/cuiwin/linux_servercheck.git
    cd linux_server_check
    ```
 
@@ -158,5 +158,5 @@ linux_server_check/
 
 如有问题或建议，请通过以下方式联系：
 
-- GitHub Issues: https://github.com/cuiwin/linux_server_check/issues
-- 邮箱: your.email@example.com
+- GitHub Issues: https://github.com/cuiwin/linux_servercheck/issues
+- 邮箱: cui2007win@163.com
