@@ -1,0 +1,816 @@
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Linux服务器巡检报告</title>
+    <!-- 引入Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 自定义Tailwind配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#165DFF',
+                        success: '#00B42A',
+                        warning: '#FF7D00',
+                        danger: '#F53F3F',
+                        info: '#86909C',
+                    },
+                    fontFamily: {
+                        sans: ['system-ui', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    
+    <!-- 自定义工具类 -->
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .scrollbar-thin {
+                scrollbar-width: thin;
+            }
+            .scrollbar-thin::-webkit-scrollbar {
+                width: 4px;
+            }
+            .scrollbar-thin::-webkit-scrollbar-thumb {
+                background-color: rgba(156, 163, 175, 0.5);
+                border-radius: 2px;
+            }
+            /* 纯CSS图标 */
+            .icon-server::before {
+                content: "🖥️";
+            }
+            .icon-cpu::before {
+                content: "💻";
+            }
+            .icon-memory::before {
+                content: "🧠";
+            }
+            .icon-disk::before {
+                content: "💽";
+            }
+            .icon-memory::before {
+                content: "📠";
+            }
+            .icon-load::before {
+                content: "📊";
+            }
+            .icon-info::before {
+                content: "ℹ️";
+            }
+            .icon-service::before {
+                content: "⚙️";
+            }
+            .icon-network::before {
+                content: "🌐";
+            }
+            .icon-log::before {
+                content: "📝";
+            }
+            .icon-security::before {
+                content: "🔒";
+            }
+            .icon-check::before {
+                content: "✅";
+            }
+            .icon-warning::before {
+                content: "⚠️";
+            }
+            .icon-error::before {
+                content: "❌";
+            }
+            .menu-active {
+                @apply text-primary border-b-2 border-primary;
+            }
+
+            .reserved-ports-truncate {
+                max-width: 220px;
+                white-space: nowrap; /* 不换行 */
+                overflow: hidden; /* 隐藏超出部分 */
+                text-overflow: ellipsis; /* 显示省略号 */
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans">
+    <!-- 导航菜单 -->
+    <nav id="main-nav" class="sticky top-0 z-40 bg-white shadow-md">
+        <div class="container mx-auto px-4">
+            <div class="flex justify-between items-center py-3">
+                <div class="flex items-center">
+                    <div class="mr-3 text-primary text-2xl icon-server"></div>
+                    <h1 class="text-xl font-bold">Linux服务器巡检报告</h1>
+                </div>
+                <div class="hidden md:flex space-x-6">
+                    <a href="#overview" class="text-gray-600 hover:text-primary py-2 transition-colors">总体概况</a>
+                    <a href="#server-info" class="text-gray-600 hover:text-primary py-2 transition-colors">基本信息</a>
+                    <a href="#load-info" class="text-gray-600 hover:text-primary py-2 transition-colors">负载信息</a>
+                    <a href="#memory-info" class="text-gray-600 hover:text-primary py-2 transition-colors">内存信息</a>
+                    <a href="#disk-info" class="text-gray-600 hover:text-primary py-2 transition-colors">磁盘信息</a>
+                    <a href="#diskio-info" class="text-gray-600 hover:text-primary py-2 transition-colors">磁盘IO</a>
+                    <a href="#iface-info" class="text-gray-600 hover:text-primary py-2 transition-colors">网卡信息</a>
+                    <a href="#netio-info" class="text-gray-600 hover:text-primary py-2 transition-colors">网络IO</a>
+                    <a href="#kernel-info" class="text-gray-600 hover:text-primary py-2 transition-colors">内核参数</a>
+                    <!-- <a href="#service-status" class="text-gray-600 hover:text-primary py-2 transition-colors">服务状态</a>
+                    <a href="#network-info" class="text-gray-600 hover:text-primary py-2 transition-colors">网络信息</a>
+                    <a href="#logs" class="text-gray-600 hover:text-primary py-2 transition-colors">系统日志</a>
+                    <a href="#security" class="text-gray-600 hover:text-primary py-2 transition-colors">安全检查</a>
+                    <a href="#summary" class="text-gray-600 hover:text-primary py-2 transition-colors">总结建议</a> -->
+                </div>
+                <button id="mobile-menu-btn" class="md:hidden text-gray-600 focus:outline-none">
+                    <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
+                    </svg>
+                </button>
+            </div>
+            <!-- 移动端菜单 -->
+            <div id="mobile-menu" class="md:hidden hidden bg-white border-t border-gray-100">
+                <div class="flex flex-col py-2">
+                    <a href="#overview" class="text-gray-600 hover:text-primary py-2 px-4 transition-colors">总体概况</a>
+                    <a href="#server-info" class="text-gray-600 hover:text-primary py-2 px-4 transition-colors">基本信息</a>
+                    <a href="#load-info" class="text-gray-600 hover:text-primary py-2 px-4 transition-colors">负载信息</a>
+                    <a href="#memory-info" class="text-gray-600 hover:text-primary py-2 transition-colors">内存信息</a>
+                    <a href="#disk-info" class="text-gray-600 hover:text-primary py-2 px-4 transition-colors">磁盘信息</a>
+                    <a href="#diskio-info" class="text-gray-600 hover:text-primary py-2 transition-colors">磁盘IO</a>
+                    <a href="#iface-info" class="text-gray-600 hover:text-primary py-2 transition-colors">网卡信息</a>
+                    <a href="#netio-info" class="text-gray-600 hover:text-primary py-2 transition-colors">网络IO</a>
+                    <a href="#kernel-info" class="text-gray-600 hover:text-primary py-2 transition-colors">内核参数</a>
+                    <!-- <a href="#service-status" class="text-gray-600 hover:text-primary py-2 px-4 transition-colors">服务状态</a>
+                    <a href="#network-info" class="text-gray-600 hover:text-primary py-2 px-4 transition-colors">网络信息</a>
+                    <a href="#logs" class="text-gray-600 hover:text-primary py-2 px-4 transition-colors">系统日志</a>
+                    <a href="#security" class="text-gray-600 hover:text-primary py-2 px-4 transition-colors">安全检查</a>
+                    <a href="#summary" class="text-gray-600 hover:text-primary py-2 px-4 transition-colors">总结建议</a> -->
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container mx-auto px-4 py-6">
+
+		<!-- 系统状态总结 -->
+		<section id="overview" class="mb-8 bg-white rounded-lg shadow-md p-5">
+            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                <span class="text-primary mr-2">📋</span>系统状态总结
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="border border-green-200 bg-green-50 p-4 rounded-lg">
+                    <div class="flex items-center mb-3">
+                        <div class="text-green-500 mr-2">✅</div>
+                        <h3 class="font-medium text-green-800">正常状态 ({{len .NormalSummaryList}})</h3>
+                    </div>
+                    <ul class="space-y-2 text-sm">
+                        {{ range $index, $elem := .NormalSummaryList }}
+                        <li class="flex items-start justify-between">
+                            <div class="flex">
+                                <span class="text-green-500 mr-2 mt-0.5">•</span>
+                                <span>{{ .Message }}</span>
+                            </div>
+                            <button class="ml-2 text-xs text-primary hover:text-primary/80 transition-colors" onclick="scrollToSection('{{ .SectionId }}')">
+                                查看详情
+                            </button>
+                        </li>
+                        {{end}}
+                    </ul>
+                </div>
+		        <div class="border border-yellow-200 bg-yellow-50 p-4 rounded-lg">
+                    <div class="flex items-center mb-3">
+                        <div class="text-yellow-500 mr-2">⚠️</div>
+                        <h3 class="font-medium text-yellow-800">需要关注 ({{len .WarningSummaryList}})</h3>
+                    </div>
+                    <ul class="space-y-2 text-sm">
+                        {{ range $index, $elem := .WarningSummaryList }}
+                        <li class="flex items-start justify-between">
+                            <div class="flex">
+                                <span class="text-yellow-500 mr-2 mt-0.5">•</span>
+                                <span>{{ .Message }}</span>
+                            </div>
+                            <button class="ml-2 text-xs text-primary hover:text-primary/80 transition-colors" onclick="scrollToSection('{{ .SectionId }}')">
+                                查看详情
+                            </button>
+                        </li>
+                        {{end}}
+                    </ul>
+                </div>
+                <div class="border border-red-200 bg-red-50 p-4 rounded-lg">
+                    <div class="flex items-center mb-3">
+                        <div class="text-red-500 mr-2">❌</div>
+                        <h3 class="font-medium text-red-800">需要处理 ({{len .ErrorSummaryList}})</h3>
+                    </div>
+                    <ul class="space-y-2 text-sm">
+                        {{ range $index, $elem := .ErrorSummaryList }}
+                        <li class="flex items-start justify-between">
+                            <div class="flex">
+                                <span class="text-red-500 mr-2 mt-0.5">•</span>
+                                <span>{{ .Message }}</span>
+                            </div>
+                            <button class="ml-2 text-xs text-primary hover:text-primary/80 transition-colors" onclick="scrollToSection('{{ .SectionId }}')">
+                                查看详情
+                            </button>
+                        </li>
+                        {{end}}
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+
+        <!-- 服务器基本信息 -->
+        <section id="server-info" class="mb-8 bg-white rounded-lg shadow p-5">
+            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                <span class="text-primary mr-2 icon-info"></span>服务器基本信息
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <p class="text-sm text-gray-500">主机名</p>
+                    <p class="font-medium">{{ .HostInfo.Hostname }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">IP地址</p>
+                    <p class="font-medium">
+                        <span class="text-orange-800">{{ .HostInfo.IpAddr }}</span>
+                    </p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">操作系统</p>
+                    <p class="font-medium">{{ .HostInfo.OS }} {{ .HostInfo.Platform }} {{ .HostInfo.PlatformFamily }} {{ .HostInfo.PlatformVersion }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">内核版本</p>
+                    <p class="font-medium">{{ .HostInfo.KernelVersion }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">运行时长</p>
+                    <p class="font-medium">{{ .HostInfo.Uptime }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">启动时间</p>
+                    <p class="font-medium">{{ .HostInfo.BootTime }}</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">CPU信息</p>
+                    <p class="font-medium">{{ .HostInfo.ModelName }} ({{ .HostInfo.Core }}核)</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">内存总量</p>
+                    <p class="font-medium">{{ FormatFloat .HostInfo.MemoryTotal }} GB</p>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500">数据盘总量</p>
+                    <p class="font-medium">{{ FormatFloat .HostInfo.DataDiskTotal }} GB</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 系统负载信息 -->
+        <section id="load-info" class="mb-8 bg-white rounded-lg shadow p-5">
+            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                <span class="text-warning mr-2 icon-load"></span>系统负载(Load)
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Load1</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Load5</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Load15</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">任务数(总)</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">任务数(RUNNING)</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">任务数(BLOCKED)</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">任务数(ZOMBIE)</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CPU使用率(总)</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">USER</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SYSTEM</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">NICE</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IDLE</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IOWAIT</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">HARDIRQ</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SOFTIRQ</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">STEAL</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">评价</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {{ range $index, $elem := .CpuLoadDetailList }}
+                        <tr>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Load.Load1  }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Load.Load5  }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Load.Load15  }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Task.Total }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Task.Running }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Task.Blocked }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Task.Zombie }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ FormatFloat .CpuUsage.Total }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .CpuUsage.User }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .CpuUsage.System }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .CpuUsage.Nice }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .CpuUsage.Idle }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .CpuUsage.Iowait }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .CpuUsage.Hardirq }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .CpuUsage.Softirq }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .CpuUsage.Steal }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                {{if eq  .Status "info" }}
+                                <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">{{ .Desc }}</span>
+                                {{else}}
+                                <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">{{ .Desc }}</span>
+                                {{end}}
+                            </td>
+                        </tr>
+                        {{ end }} 
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
+        <!-- 系统内存信息 -->
+        <section id="memory-info" class="mb-8 bg-white rounded-lg shadow p-5">
+            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                <span class="text-warning mr-2 icon-memory"></span>系统内存占用
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">总内存</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">UserdPercent</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Free</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Available</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Buffers</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cached</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">USED(总)</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">(用户空间)</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">(内核)</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SLAB</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SUnreclaim</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VmallocUsed</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">BlackHole</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">评价</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {{ range $index, $elem := .MemDetailList }}
+                        <tr>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .MemUsage.Total }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .MemUsage.UserdPercent }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .MemUsage.Free }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .MemUsage.Available }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .MemUsage.Buffers }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .MemUsage.Cached }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .MemUsage.Used }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .MemUsage.ProcessUserd }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .MemUsage.KernelUsed }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .MemUsage.Slab }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .MemUsage.SUnreclaim }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .MemUsage.VmallocUsed }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .MemUsage.BlackHole }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                {{if eq  .Status "info" }}
+                                <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">{{ .Desc }}</span>
+                                {{else}}
+                                <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">{{ .Desc }}</span>
+                                {{end}}
+                            </td>
+                        </tr>
+                        {{ end }}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
+        <!-- 磁盘分区信息 -->
+        <section id="disk-info" class="mb-8 bg-white rounded-lg shadow p-5">
+            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                <span class="text-warning mr-2 icon-disk"></span>磁盘分区信息
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">分区</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">挂载点</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">文件系统</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">总容量</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">已使用</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">可用</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">使用率</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Inode使用率</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">评价</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {{ range $index, $elem := .DiskUsageList }}
+                        <tr>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .Device }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Mountpoint }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Fstype }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Total }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Used }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .Free }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">
+                                <div class="flex items-center">
+                                    <div class="w-24 bg-gray-200 rounded-full h-2 mr-2">
+                                        <div class="bg-primary h-2 rounded-full" style="width: {{ .UsedPercent }}"></div>
+                                    </div>
+                                    <span class="text-sm">{{ .UsedPercent }}%</span>
+                                </div>
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">
+                                <div class="flex items-center">
+                                    <div class="w-24 bg-gray-200 rounded-full h-2 mr-2">
+                                        <div class="bg-primary h-2 rounded-full" style="width: {{ .InodesUsedPercent }}"></div>
+                                    </div>
+                                    <span class="text-sm">{{ .InodesUsedPercent }}%</span>
+                                </div>
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                {{if eq  .Status "info" }}
+                                <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">{{ .Desc }}</span>
+                                {{else}}
+                                <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">{{ .Desc }}</span>
+                                {{end}}
+                            </td>
+                        </tr>
+                        {{ end }}    
+                        <!-- <tr>
+                            <td class="px-4 py-3 whitespace-nowrap">/home</td>
+                            <td class="px-4 py-3 whitespace-nowrap">ext4</td>
+                            <td class="px-4 py-3 whitespace-nowrap">500 GB</td>
+                            <td class="px-4 py-3 whitespace-nowrap">410 GB</td>
+                            <td class="px-4 py-3 whitespace-nowrap">90 GB</td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <div class="flex items-center">
+                                    <div class="w-24 bg-gray-200 rounded-full h-2 mr-2">
+                                        <div class="bg-warning h-2 rounded-full" style="width: 82%"></div>
+                                    </div>
+                                    <span class="text-sm">82%</span>
+                                </div>
+                            </td>
+                        </tr> -->
+                        <!-- <tr>
+                            <td class="px-4 py-3 whitespace-nowrap">/var</td>
+                            <td class="px-4 py-3 whitespace-nowrap">ext4</td>
+                            <td class="px-4 py-3 whitespace-nowrap">200 GB</td>
+                            <td class="px-4 py-3 whitespace-nowrap">170 GB</td>
+                            <td class="px-4 py-3 whitespace-nowrap">30 GB</td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                <div class="flex items-center">
+                                    <div class="w-24 bg-gray-200 rounded-full h-2 mr-2">
+                                        <div class="bg-danger h-2 rounded-full" style="width: 85%"></div>
+                                    </div>
+                                    <span class="text-sm text-danger">85%</span>
+                                </div>
+                            </td>
+                        </tr> -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 磁盘IO信息 -->
+        <section id="diskio-info" class="mb-8 bg-white rounded-lg shadow p-5">
+            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                <span class="text-warning mr-2 icon-disk"></span>磁盘IO信息
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Device</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">rrqm/s</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">wrqm/s</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">r/s</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">w/s</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">rkB/s</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">wkB/s</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">avgrq-sz</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">avgqu-sz</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">await</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">r_await</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">w_await</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">svctm</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IOPS</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">吞吐MB/s</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">%util</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">评价</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {{ range $index, $elem := .DiskIOStatsList }}
+                        <tr>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .Device }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .IOrrqmS }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .IOwrqmS }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .IOrS }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .IOwS }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .IOrkBPS }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .IOwkBPS }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .IOavgrqSz }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .IOavgquSz }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap  text-sm">{{ .IOawait }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .IOrAwait }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .IOwAwait }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .IOsvctm }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .IOPS }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ FormatFloat .Throughput }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .IOutil }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                {{if eq  .Status "info" }}
+                                <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">{{ .Desc }}</span>
+                                {{else}}
+                                <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">{{ .Desc }}</span>
+                                {{end}}
+                            </td>
+                        </tr>
+                        {{ end }}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- 网卡信息 -->
+        <section id="iface-info" class="mb-8 bg-white rounded-lg shadow p-5">
+            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                <span class="text-primary mr-2 icon-network"></span>网卡信息
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">网卡名称</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IP地址</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">MAC地址</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">启用状态</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">是否运行</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {{ range $index, $elem := .NetworkInterfaceList }}
+                        <tr>
+                            <td class="px-4 py-3 whitespace-nowrap font-medium">{{ .Name }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm reserved-ports-truncate" title="{{ .IPAddresses }}">
+                                {{ .IPAddresses }}
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .MACAddress }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                {{if eq  .Status "已启用" }}
+                                <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">{{ .Status }}</span>
+                                {{else}}
+                                <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">{{ .Status }}</span>
+                                {{end}}
+                            </td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">
+                                {{if eq  .IsRunning true }}
+                                <span class="px-2 py-1 text-xs text-green-800">Running</span>
+                                {{else}}
+                                <span class="px-2 py-1 text-xs bg-yellow-100 text-yellow-800">Not Running</span>
+                                {{end}}
+                            </td>
+                        </tr>
+                        {{ end }}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        
+        <!-- 网络IO信息 -->
+        <section id="netio-info" class="mb-8 bg-white rounded-lg shadow p-5">
+            <h2 class="text-lg font-semibold mb-4 flex items-center">
+                <span class="text-primary mr-2 icon-network"></span>网络IO信息
+            </h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead>
+                        <tr>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">网卡名称</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">接收包数/秒</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">发送包数/秒</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">接收KB/秒</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">发送KB/秒</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">接收数据包平均大小(字节)</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">发送数据包平均大小(字节)</th>
+                            <th class="px-4 py-3 bg-gray-50 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">评价</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        {{ range $index, $elem := .NetworkInterfaceStatsList }}
+                        <tr>
+                            <td class="px-4 py-3 whitespace-nowrap font-medium">{{ .Interface }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .ReceivePackets }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .TransmitPackets }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .ReceiveKBytes }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ .TransmitKBytes }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ FormatFloat .ReceiveAvgPacketSize }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap text-sm">{{ FormatFloat .TransmitAvgPacketSize }}</td>
+                            <td class="px-4 py-3 whitespace-nowrap">
+                                {{if eq  .Status "info" }}
+                                <span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">{{ .Desc }}</span>
+                                {{else}}
+                                <span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800">{{ .Desc }}</span>
+                                {{end}}
+                            </td>
+                        </tr>
+                        {{ end }}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+		<!-- 内核参数对比 -->
+		<section id="kernel-info" class="mb-16 scroll-mt-24">
+            <div class="bg-white rounded-xl shadow-md p-6 mb-6">
+              <h2 class="text-lg font-semibold mb-4 flex items-center">
+                <span class="text-primary mr-2 icon-log"></span>内核参数对比
+              </h2>
+
+              <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+                <div class="bg-blue-50 rounded-lg p-4 border-l-4 border-primary">
+                  <p class="text-sm text-gray-600">检查参数总数</p>
+                  <p class="text-2xl font-bold text-primary">{{ .KernelComparisonSummary.TotalParams }}</p>
+                </div>
+                <div class="bg-green-50 rounded-lg p-4 border-l-4 border-success">
+                  <p class="text-sm text-gray-600">匹配参数数</p>
+                  <p class="text-2xl font-bold text-success">{{ .KernelComparisonSummary.MatchedParams }}</p>
+                </div>
+                <div class="bg-yellow-50 rounded-lg p-4 border-l-4 border-warning">
+                  <p class="text-sm text-gray-600">需要调整</p>
+                  <p class="text-2xl font-bold text-warning">{{ .KernelComparisonSummary.MismatchedParams }}</p>
+                </div>
+                <div class="bg-yellow-50 rounded-lg p-4 border-l-4 border-secondary">
+                  <p class="text-sm text-gray-600">匹配率</p>
+                  <p class="text-2xl font-bold text-secondary">{{ FormatFloat .KernelComparisonSummary.MatchedPercent }}%</p>
+                </div>
+              </div>
+                            
+              <!-- 参数对比表格 -->
+              <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">参数名称</th>
+                      <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">模板值</th>
+                      <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">实际值</th>
+                      <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+                      <!-- <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">建议</th> -->
+                    </tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-gray-200">
+                    {{ range $index, $elem := .KernelParamList }}
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap">
+                          <div class="font-medium text-gray-900">{{ .Name }}</div>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap reserved-ports-truncate" title="{{ .TemplateValue }}">
+                          <span class="bg-blue-100 text-blue-500 px-2 py-1 rounded text-sm">{{ .TemplateValue }}</span>
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap reserved-ports-truncate" title="{{ .SystemValue }}"">
+                          {{if eq  .SystemValue "[不存在]" }}
+                            <span class="bg-yellow-100 text-yellow-500 px-2 py-1 rounded text-sm">{{ .SystemValue }}</span>
+                          {{else}}
+                            <span class="bg-blue-100 text-blue-500 px-2 py-1 rounded text-sm">{{ .SystemValue }}</span>
+                          {{end}}
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap">              
+                            {{if eq  .Desc "匹配" }}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                {{ .Desc }}
+                            </span>
+                            {{else}}
+                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                                {{ .Desc }}
+                            </span>
+                            {{end}}
+                        </td>
+                        <!-- <td class="px-6 py-4 whitespace-nowrap">
+                          <span class="text-green-600 font-medium">参数已优化</span>
+                        </td> -->
+                      </tr>
+                      {{ end }}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+        </section>
+        
+    </main>
+
+	<footer class="bg-gray-800 border-t border-gray-200 py-4">
+	        <div class="container mx-auto px-4 text-center text-gray-500 text-sm">
+	            <p>© 2025 项目赋能运维部 生成时间: {{ .Timestamp }}</p>
+	        </div>
+	</footer>
+
+    <script>
+        // 移动端菜单切换
+        document.getElementById('mobile-menu-btn').addEventListener('click', function() {
+            const mobileMenu = document.getElementById('mobile-menu');
+            mobileMenu.classList.toggle('hidden');
+        });
+
+        // 导航菜单滚动效果
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                
+                const targetId = this.getAttribute('href');
+                const targetElement = document.querySelector(targetId);
+                
+                if (targetElement) {
+                    // 关闭移动端菜单
+                    document.getElementById('mobile-menu').classList.add('hidden');
+                    
+                    // 平滑滚动到目标位置
+                    window.scrollTo({
+                        top: targetElement.offsetTop - 80, // 减去导航栏高度
+                        behavior: 'smooth'
+                    });
+                    
+                    // 高亮当前菜单项
+                    document.querySelectorAll('nav a').forEach(navItem => {
+                        navItem.classList.remove('menu-active');
+                    });
+                    this.classList.add('menu-active');
+                }
+            });
+        });
+
+        // 监听滚动事件，高亮当前导航项
+        window.addEventListener('scroll', function() {
+            const scrollPosition = window.scrollY;
+            
+            document.querySelectorAll('section').forEach(section => {
+                const sectionTop = section.offsetTop - 100;
+                const sectionBottom = sectionTop + section.offsetHeight;
+                const sectionId = section.getAttribute('id');
+                
+                if (scrollPosition >= sectionTop && scrollPosition < sectionBottom) {
+                    document.querySelectorAll('nav a').forEach(navItem => {
+                        navItem.classList.remove('menu-active');
+                        if (navItem.getAttribute('href') === `#${sectionId}`) {
+                            navItem.classList.add('menu-active');
+                        }
+                    });
+                }
+            });
+        });
+
+        // 日志过滤功能
+        document.querySelectorAll('.log-filter-btn').forEach(button => {
+            button.addEventListener('click', function() {
+                // 移除所有按钮的活动状态
+                document.querySelectorAll('.log-filter-btn').forEach(btn => {
+                    btn.classList.remove('bg-primary', 'text-white');
+                    btn.classList.add('bg-gray-200', 'text-gray-700');
+                });
+                
+                // 添加当前按钮的活动状态
+                this.classList.remove('bg-gray-200', 'text-gray-700');
+                this.classList.add('bg-primary', 'text-white');
+                
+                const filter = this.getAttribute('data-filter');
+                
+                // 过滤日志
+                document.querySelectorAll('.log-entry').forEach(entry => {
+                    if (filter === 'all' || entry.getAttribute('data-type') === filter) {
+                        entry.style.display = 'block';
+                    } else {
+                        entry.style.display = 'none';
+                    }
+                });
+            });
+        });
+
+        // 页面加载完成后执行
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化导航高亮
+            const firstSectionId = document.querySelector('section').getAttribute('id');
+            document.querySelector(`nav a[href="#${firstSectionId}"]`).classList.add('menu-active');
+            
+            // 初始化日志过滤按钮
+            document.querySelector('.log-filter-btn[data-filter="all"]').click();
+        });
+
+       // 平滑滚动到指定ID的元素
+       function scrollToSection(sectionId) {
+            const element = document.getElementById(sectionId);
+            if (element) {
+                element.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'start'
+                });
+                
+                // 添加高亮效果
+                element.classList.add('ring-2', 'ring-primary', 'ring-opacity-50');
+                setTimeout(() => {
+                    element.classList.remove('ring-2', 'ring-primary', 'ring-opacity-50');
+                }, 2000);
+            }
+        } 
+    </script>
+</body>
+</html>    
