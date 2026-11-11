@@ -1,0 +1,33 @@
+# Binaries
+linux_server_check
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Reports (generated output)
+reports/
+
+# Dependency directories
+vendor/
+
+# IDE / Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env files
+.env
+.env.*
+!env.example
+
+# Debug
+*.pprof
