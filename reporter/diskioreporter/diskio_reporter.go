@@ -67,20 +67,40 @@ func (c *DiskIOReporter) GetDiskStats(version string) ([]DiskIOStats, error) {
 
 // 检测iostat版本
 func (c *DiskIOReporter) GetIostatVersion() (string, error) {
-	// 执行rpm查询命令
+	// 方法1: 尝试 rpm (CentOS/RHEL)
 	cmd := exec.Command("rpm", "-q", "sysstat")
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("执行rpm命令失败: %v, 输出: %s", err, string(output))
+	if err == nil {
+		re := regexp.MustCompile(`sysstat-(\d+\.\d+\.\d+)-`)
+		matches := re.FindStringSubmatch(string(output))
+		if len(matches) >= 2 {
+			return matches[1], nil
+		}
 	}
-	// 匹配类似 "sysstat-10.1.5-20.el7_9.x86_64" 中的版本号
-	// 捕获 "sysstat-" 后面的数字版本部分
-	re := regexp.MustCompile(`sysstat-(\d+\.\d+\.\d+)-`)
-	matches := re.FindStringSubmatch(string(output))
-	if len(matches) >= 2 {
-		return matches[1], nil
+
+	// 方法2: 尝试 dpkg (Debian/Ubuntu)
+	cmd = exec.Command("dpkg", "-s", "sysstat")
+	output, err = cmd.CombinedOutput()
+	if err == nil {
+		re := regexp.MustCompile(`Version:\s*(\d+\.\d+\.\d+)`)
+		matches := re.FindStringSubmatch(string(output))
+		if len(matches) >= 2 {
+			return matches[1], nil
+		}
 	}
-	return "", fmt.Errorf("无法从 %q 中提取版本号", output)
+
+	// 方法3: 尝试 iostat -V 输出 (通用)
+	cmd = exec.Command("sh", "-c", "iostat -V 2>&1")
+	output, err = cmd.CombinedOutput()
+	if err == nil {
+		re := regexp.MustCompile(`(\d+\.\d+\.\d+)`)
+		matches := re.FindStringSubmatch(string(output))
+		if len(matches) >= 2 {
+			return matches[1], nil
+		}
+	}
+
+	return "", fmt.Errorf("无法检测iostat版本")
 }
 
 func parseVersion_10(output string) ([]DiskIOStats, error) {
@@ -136,12 +156,35 @@ func parseIostatOutput(output string, iostatversion string) ([]DiskIOStats, erro
 
 	// 根据版本选择不同的解析函数
 	switch {
-	case strings.HasPrefix(iostatversion, "10."):
+	case iostatversion == "":
+		// 版本未知，尝试自动检测格式: 根据列数判断
+		fmt.Println("iostat未知版本, 尝试自动检测格式")
+		// sysstat 10.x+ 有14列(含rrqm/s, wrqm/s), 旧版12列(不含r_await, w_await)
+		lines := strings.Split(output, "\n")
+		for _, line := range lines {
+			fields := strings.Fields(strings.TrimSpace(line))
+			if len(fields) == 0 {
+				continue
+			}
+			// 检查第一行数据是否包含设备名作为起点
+			if len(fields) >= 14 {
+				// 14+ 列 -> sysstat 10.x 格式
+				fmt.Println("自动检测为 sysstat 10.x 格式")
+				stats, err = parseVersion_10(output)
+			} else {
+				fmt.Println("自动检测为 sysstat 旧版格式")
+				// 旧版格式也尝试用10的解析器(字段可能错位但能工作)
+				stats, err = parseVersion_10(output)
+			}
+			break
+		}
+
+	case strings.HasPrefix(iostatversion, "10."), strings.HasPrefix(iostatversion, "11."), strings.HasPrefix(iostatversion, "12."):
 		stats, err = parseVersion_10(output)
 
 	default:
-		// 尝试自动检测格式
-		fmt.Println("iostat未知版本, 尝试自动检测格式")
+		// 未知格式也尝试解析
+		stats, err = parseVersion_10(output)
 	}
 	if err != nil {
 		return nil, err

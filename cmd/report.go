@@ -188,17 +188,21 @@ var reportCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		fmt.Println("开始检查分析主机")
 
+		// 统一时间戳，报告内容和文件名共用
+		now := time.Now()
+		timestamp := now.Format("2006-01-02 15:04:05")
+		timestampFile := now.Format("20060102150405")
+
 		reportData := ReportData{
-			Timestamp: time.Now().Format("2006-01-02 15:04:05"),
+			Timestamp: timestamp,
 		}
 
 		// -------  主机信息 begin  --------
 		fmt.Println("开始检查主机 - 【主机信息】")
 		hostreporterInstance := hostreporter.HostReporter{}
-		hostreporterInstance.GetHostInfo()
 		hostInfo, err := hostreporterInstance.GetHostInfo()
 		if err != nil {
-			log.Printf("获取主机信息失败: %v", err)
+			cmd.PrintErrf("获取主机信息失败: %v\n", err)
 			return
 		}
 		reportData.HostInfo = hostInfo
@@ -210,7 +214,7 @@ var reportCmd = &cobra.Command{
 		diskcheckerInstance := diskchecker.DiskChecker{}
 		disk_usage_list, err := diskcheckerInstance.GetDiskUsageInfo()
 		if err != nil {
-			fmt.Printf("Error GetDiskUsageInfo: %v\n", err)
+			cmd.PrintErrf("获取磁盘使用信息失败: %v\n", err)
 		}
 		reportData.DiskUsageList = disk_usage_list
 
@@ -225,7 +229,11 @@ var reportCmd = &cobra.Command{
 		// 循环调用函数 5 次，并将结果保存到数组中
 		for i := 0; i < checkCount; i++ {
 
-			info, _ := loadcheckerInstance.GetDetail()
+			info, err := loadcheckerInstance.GetDetail()
+			if err != nil {
+				log.Printf("第%d次获取CPU负载失败: %v", i+1, err)
+				continue
+			}
 			results = append(results, info)
 		}
 		reportData.CpuLoadDetailList = results
@@ -239,7 +247,11 @@ var reportCmd = &cobra.Command{
 		// 循环调用函数 5 次，并将结果保存到数组中
 		for i := 0; i < checkCount; i++ {
 
-			info, _ := memcheckerInstance.GetDetail()
+			info, err := memcheckerInstance.GetDetail()
+			if err != nil {
+				log.Printf("第%d次获取内存信息失败: %v", i+1, err)
+				continue
+			}
 			mem_results = append(mem_results, info)
 		}
 		reportData.MemDetailList = mem_results
@@ -254,13 +266,17 @@ var reportCmd = &cobra.Command{
 		// 先获取iostat版本
 		version, err := diskioreporterInstance.GetIostatVersion()
 		if err != nil {
-			fmt.Printf("获取iostat版本失败: %v\n", err)
+			cmd.PrintErrf("获取iostat版本失败: %v\n", err)
 		}
 		fmt.Printf("获取iostat命令版本: %v\n", version)
 
 		// 循环调用函数 5 次，并将结果保存到数组中
 		for i := 0; i < checkCount; i++ {
-			info, _ := diskioreporterInstance.GetDiskStats(version)
+			info, err := diskioreporterInstance.GetDiskStats(version)
+			if err != nil {
+				cmd.PrintErrf("第%d次获取磁盘IO信息失败: %v\n", i+1, err)
+				continue
+			}
 			disk_io_results = append(disk_io_results, info...)
 		}
 
@@ -278,7 +294,7 @@ var reportCmd = &cobra.Command{
 
 		list, sumary, err := kernelreporterInstance.GetKernelParamList()
 		if err != nil {
-			fmt.Printf("Error GetKernelParamList: %v\n", err)
+			cmd.PrintErrf("获取内核参数列表失败: %v\n", err)
 		}
 		reportData.KernelParamList = list
 		reportData.KernelComparisonSummary = sumary
@@ -292,14 +308,18 @@ var reportCmd = &cobra.Command{
 
 		ifacelist, err := netreporterInstance.GetNetworkInterfaceList()
 		if err != nil {
-			fmt.Printf("Error GetNetworkInterfaceList: %v\n", err)
+			cmd.PrintErrf("获取网络接口列表失败: %v\n", err)
 		}
 		reportData.NetworkInterfaceList = ifacelist
 
 		var net_io_results []netreporter.NetworkInterfaceStats
 		// 循环调用函数 5 次，并将结果保存到数组中
 		for i := 0; i < checkCount; i++ {
-			info, _ := netreporterInstance.GetNetworkStatsList()
+			info, err := netreporterInstance.GetNetworkStatsList()
+			if err != nil {
+				cmd.PrintErrf("第%d次获取网络流量信息失败: %v\n", i+1, err)
+				continue
+			}
 			net_io_results = append(net_io_results, info...)
 		}
 
@@ -329,12 +349,9 @@ var reportCmd = &cobra.Command{
 			return
 		}
 
-		// 获取当前时间戳
-		timestamp := time.Now().Format("20060102150405")
-
 		reportDir := "reports"
 		// 构建包含IP和时间戳的文件名
-		fileName := fmt.Sprintf("server_report_%s_%s.html", reportData.HostInfo.IpAddr, timestamp)
+		fileName := fmt.Sprintf("server_report_%s_%s.html", reportData.HostInfo.IpAddr, timestampFile)
 		filePath := filepath.Join(reportDir, fileName) // 使用filepath确保路径分隔符正确
 
 		// 检查并创建目录
@@ -349,7 +366,11 @@ var reportCmd = &cobra.Command{
 			cmd.PrintErrf("创建文件失败: %v\n", err)
 			return
 		}
-		defer outputFile.Close()
+		defer func() {
+			if cerr := outputFile.Close(); cerr != nil {
+				cmd.PrintErrf("关闭文件失败: %v\n", cerr)
+			}
+		}()
 
 		// 执行模板并写入文件
 		if err := tmpl.Execute(outputFile, newReportData); err != nil {
@@ -365,13 +386,4 @@ func init() {
 
 	// 添加检查次数参数，默认值为5
 	reportCmd.Flags().IntVarP(&checkCount, "count", "c", 5, "指定各项指标的检查次数")
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// reportCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// reportCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }
