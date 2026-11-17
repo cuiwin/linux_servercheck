@@ -175,6 +175,19 @@ func (m model) View() string {
 		sections = append(sections, m.renderHistoryTable())
 	}
 
+	// ===== 上下文切换 TOP5 =====
+	if len(m.records) > 0 {
+		sections = append(sections, m.renderCtxtTopPanel(m.records[len(m.records)-1].detail))
+	}
+
+	// ===== CPU 占用 TOP5（阈值触发时）=====
+	if len(m.records) > 0 {
+		cur := m.records[len(m.records)-1].detail
+		if len(cur.TopCPUProcs) > 0 {
+			sections = append(sections, m.renderTopCPUProcsPanel(cur))
+		}
+	}
+
 	// ===== 底部提示 =====
 	count := len(m.records)
 	sections = append(sections, footerStyle.Render(fmt.Sprintf(" q: 退出  |  共 %d 条记录  |  每秒刷新", count)))
@@ -245,7 +258,86 @@ func (m model) renderCurrentPanel(cur loadchecker.CpuLoadDetail) string {
 	line3 := label3 + "  " + infoValueStyle.Render(valTotal) + "    " + infoValueStyle.Render(valTasks)
 	line4 := label4 + "  " + statusLabel + "      " + descLabel
 
-	return panelStyle.Render(lipgloss.JoinVertical(lipgloss.Left, line1, line2, line3, line4))
+	// 上下文切换（累计值做差后的速率）
+	label5 := infoLabelStyle.Render(padToWidth("Ctxt Switch:", labelW))
+	var ctxtVal string
+	if cur.Ctxt.Valid {
+		ctxtVal = fmt.Sprintf("累计 = %-12d  %.0f/s  (vol %.0f/s, nvol %.0f/s, 被动 %.0f%%)",
+			cur.Ctxt.SystemTotal, cur.Ctxt.Rate, cur.Ctxt.VoluntaryRate,
+			cur.Ctxt.NonVoluntaryRate, cur.Ctxt.NonVoluntaryRatio*100)
+	} else {
+		ctxtVal = fmt.Sprintf("累计 = %-12d  等待第二个采样点", cur.Ctxt.SystemTotal)
+	}
+	line5 := label5 + "  " + infoValueStyle.Render(ctxtVal)
+
+	return panelStyle.Render(lipgloss.JoinVertical(lipgloss.Left, line1, line2, line3, line4, line5))
+}
+
+// renderCtxtTopPanel 渲染上下文切换 TOP5 两个榜单
+// 左：进程自身（主线程）切换，对应 pidstat -w
+// 右：含全部线程的累计切换，对应 pidstat -wt，多线程进程差异会很大
+func (m model) renderCtxtTopPanel(cur loadchecker.CpuLoadDetail) string {
+	header := tableHeaderStyle.Render("上下文切换 TOP5（本秒增量）")
+	if !cur.Ctxt.Valid {
+		return panelStyle.Render(lipgloss.JoinVertical(lipgloss.Left,
+			header, infoValueStyle.Render("等待第二个采样点...")))
+	}
+
+	left := renderCtxtTopTable("进程自身（主线程）", cur.Ctxt.TopProcesses, false)
+	right := renderCtxtTopTable("含全部线程", cur.Ctxt.TopThreaded, true)
+
+	return panelStyle.Render(lipgloss.JoinVertical(lipgloss.Left, header,
+		lipgloss.JoinHorizontal(lipgloss.Top, left, "    ", right)))
+}
+
+// renderCtxtTopTable 渲染单个 TOP5 榜单
+func renderCtxtTopTable(title string, list []loadchecker.ProcCtxtSwitch, withThreads bool) string {
+	lines := []string{tableHeaderStyle.Render(title)}
+	if withThreads {
+		lines = append(lines, tableHeaderStyle.Render(
+			padStr("PID", 7, 2)+" "+padStr("NAME", 18, 0)+" "+padStr("THREADS", 8, 2)+" "+
+				padStr("VOL", 8, 2)+" "+padStr("NVOL", 8, 2)))
+	} else {
+		lines = append(lines, tableHeaderStyle.Render(
+			padStr("PID", 7, 2)+" "+padStr("NAME", 24, 0)+" "+
+				padStr("VOL", 8, 2)+" "+padStr("NVOL", 8, 2)))
+	}
+
+	if len(list) == 0 {
+		lines = append(lines, infoValueStyle.Render("本秒无切换"))
+		return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	}
+
+	for _, p := range list {
+		if withThreads {
+			lines = append(lines, tableRowStyle.Render(
+				padStr(strconv.Itoa(p.PID), 7, 2)+" "+padStr(p.Name, 18, 0)+" "+
+					padStr(strconv.Itoa(p.Threads), 8, 2)+" "+
+					padStr(strconv.FormatUint(p.Voluntary, 10), 8, 2)+" "+
+					padStr(strconv.FormatUint(p.NonVoluntary, 10), 8, 2)))
+		} else {
+			lines = append(lines, tableRowStyle.Render(
+				padStr(strconv.Itoa(p.PID), 7, 2)+" "+padStr(p.Name, 24, 0)+" "+
+					padStr(strconv.FormatUint(p.Voluntary, 10), 8, 2)+" "+
+					padStr(strconv.FormatUint(p.NonVoluntary, 10), 8, 2)))
+		}
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// renderTopCPUProcsPanel 渲染 CPU 占用 TOP5 面板
+func (m model) renderTopCPUProcsPanel(cur loadchecker.CpuLoadDetail) string {
+	header := tableHeaderStyle.Render("CPU 占用 TOP5（阈值触发）")
+	lines := []string{
+		header,
+		tableHeaderStyle.Render(padStr("PID", 7, 2) + " " + padStr("NAME", 24, 0) + " " + padStr("CPU%", 8, 2)),
+	}
+	for _, p := range cur.TopCPUProcs {
+		lines = append(lines, tableRowStyle.Render(
+			padStr(strconv.Itoa(p.PID), 7, 2)+" "+padStr(p.Name, 24, 0)+" "+
+				padCPUCell(fmt.Sprintf("%.1f", p.CPUPercent))))
+	}
+	return panelStyle.Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
 // renderHistoryTable 渲染历史表格
@@ -362,7 +454,7 @@ func spaces(n int) string {
 	if n <= 0 {
 		return ""
 	}
-	return string(make([]byte, n))
+	return strings.Repeat(" ", n)
 }
 
 func padToWidth(s string, width int) string {

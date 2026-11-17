@@ -39,6 +39,7 @@ type ReportData struct {
 	Timestamp                 string                              `json:"timestamp"`
 	DiskUsageList             []diskchecker.DiskUsage             `json:"diskUsageList"`
 	CpuLoadDetailList         []loadchecker.CpuLoadDetail         `json:"cpuLoadDetailList"`
+	CtxtSummary               loadchecker.CtxtSwitchStat          `json:"ctxtSummary"`
 	MemDetailList             []*memchecker.MemDetail             `json:"memDetailList"`
 	DiskIOStatsList           []diskioreporter.DiskIOStats        `json:"diskIOStatsList"`
 	KernelParamList           []kernelreporter.KernelParam        `json:"kernelParamList"`
@@ -235,8 +236,16 @@ var reportCmd = &cobra.Command{
 				continue
 			}
 			results = append(results, info)
+
+			// 上下文切换是累计值，需要相邻两次采样做差才有速率，因此留出 1 秒采样间隔
+			if i < checkCount-1 {
+				time.Sleep(time.Second)
+			}
 		}
 		reportData.CpuLoadDetailList = results
+		if len(results) > 0 {
+			reportData.CtxtSummary = results[len(results)-1].Ctxt
+		}
 
 		// -------  负载信息 end  --------
 
@@ -339,6 +348,9 @@ var reportCmd = &cobra.Command{
 		// 创建 Template 对象并注册函数
 		tmpl := template.New("server_inspection.html").Funcs(template.FuncMap{
 			"FormatFloat": FormatFloat, // 自定义时间格式化函数
+			"Percent": func(value float64) string {
+				return strconv.FormatFloat(value*100, 'f', 1, 64) + "%"
+			},
 			// 可以添加更多自定义函数...
 		})
 
