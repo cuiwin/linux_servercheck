@@ -15,12 +15,12 @@ import (
 	"time"
 
 	"github.com/cuiwin/linux_server_check/checker/diskchecker"
+	"github.com/cuiwin/linux_server_check/checker/diskiochecker"
+	"github.com/cuiwin/linux_server_check/checker/hostchecker"
+	"github.com/cuiwin/linux_server_check/checker/kernelchecker"
 	"github.com/cuiwin/linux_server_check/checker/loadchecker"
 	"github.com/cuiwin/linux_server_check/checker/memchecker"
-	"github.com/cuiwin/linux_server_check/reporter/diskioreporter"
-	"github.com/cuiwin/linux_server_check/reporter/hostreporter"
-	"github.com/cuiwin/linux_server_check/reporter/kernelreporter"
-	"github.com/cuiwin/linux_server_check/reporter/netreporter"
+	"github.com/cuiwin/linux_server_check/checker/netchecker"
 
 	"github.com/spf13/cobra"
 )
@@ -35,20 +35,20 @@ type SummaryInfo struct {
 
 // 报告数据结构
 type ReportData struct {
-	HostInfo                  hostreporter.HostInfo               `json:"HostInfo"`
-	Timestamp                 string                              `json:"timestamp"`
-	DiskUsageList             []diskchecker.DiskUsage             `json:"diskUsageList"`
-	CpuLoadDetailList         []loadchecker.CpuLoadDetail         `json:"cpuLoadDetailList"`
-	CtxtSummary               loadchecker.CtxtSwitchStat          `json:"ctxtSummary"`
-	MemDetailList             []*memchecker.MemDetail             `json:"memDetailList"`
-	DiskIOStatsList           []diskioreporter.DiskIOStats        `json:"diskIOStatsList"`
-	KernelParamList           []kernelreporter.KernelParam        `json:"kernelParamList"`
-	KernelComparisonSummary   kernelreporter.ComparisonSummary    `json:"kernelComparisonSummary"`
-	NetworkInterfaceList      []netreporter.NetworkInterface      `json:"networkInterfaceList"`
-	NetworkInterfaceStatsList []netreporter.NetworkInterfaceStats `json:"networkInterfaceStatsList"`
-	NormalSummaryList         []SummaryInfo                       `json:"normalSummaryList"`
-	WarningSummaryList        []SummaryInfo                       `json:"warningSummaryList"`
-	ErrorSummaryList          []SummaryInfo                       `json:"errorSummaryList"`
+	HostInfo                  hostchecker.HostInfo               `json:"HostInfo"`
+	Timestamp                 string                             `json:"timestamp"`
+	DiskUsageList             []diskchecker.DiskUsage            `json:"diskUsageList"`
+	CpuLoadDetailList         []loadchecker.CpuLoadDetail        `json:"cpuLoadDetailList"`
+	CtxtSummary               loadchecker.CtxtSwitchStat         `json:"ctxtSummary"`
+	MemDetailList             []*memchecker.MemDetail            `json:"memDetailList"`
+	DiskIOStatsList           []diskiochecker.DiskIOStats        `json:"diskIOStatsList"`
+	KernelParamList           []kernelchecker.KernelParam        `json:"kernelParamList"`
+	KernelComparisonSummary   kernelchecker.ComparisonSummary    `json:"kernelComparisonSummary"`
+	NetworkInterfaceList      []netchecker.NetworkInterface      `json:"networkInterfaceList"`
+	NetworkInterfaceStatsList []netchecker.NetworkInterfaceStats `json:"networkInterfaceStatsList"`
+	NormalSummaryList         []SummaryInfo                      `json:"normalSummaryList"`
+	WarningSummaryList        []SummaryInfo                      `json:"warningSummaryList"`
+	ErrorSummaryList          []SummaryInfo                      `json:"errorSummaryList"`
 }
 
 // 自定义函数：格式化
@@ -200,8 +200,8 @@ var reportCmd = &cobra.Command{
 
 		// -------  主机信息 begin  --------
 		fmt.Println("开始检查主机 - 【主机信息】")
-		hostreporterInstance := hostreporter.HostReporter{}
-		hostInfo, err := hostreporterInstance.GetHostInfo()
+		hostcheckerInstance := hostchecker.HostChecker{}
+		hostInfo, err := hostcheckerInstance.GetHostInfo()
 		if err != nil {
 			cmd.PrintErrf("获取主机信息失败: %v\n", err)
 			return
@@ -269,11 +269,11 @@ var reportCmd = &cobra.Command{
 		// -------  磁盘IO信息 begin  --------
 		fmt.Println("开始检查主机 - 【磁盘IO】")
 
-		var disk_io_results []diskioreporter.DiskIOStats
-		diskioreporterInstance := diskioreporter.DiskIOReporter{}
+		var disk_io_results []diskiochecker.DiskIOStats
+		diskiocheckerInstance := diskiochecker.DiskIOChecker{}
 
 		// 先获取iostat版本
-		version, err := diskioreporterInstance.GetIostatVersion()
+		version, err := diskiocheckerInstance.GetIostatVersion()
 		if err != nil {
 			cmd.PrintErrf("获取iostat版本失败: %v\n", err)
 		}
@@ -281,7 +281,7 @@ var reportCmd = &cobra.Command{
 
 		// 循环调用函数 5 次，并将结果保存到数组中
 		for i := 0; i < checkCount; i++ {
-			info, err := diskioreporterInstance.GetDiskStats(version)
+			info, err := diskiocheckerInstance.GetDiskStats(version)
 			if err != nil {
 				cmd.PrintErrf("第%d次获取磁盘IO信息失败: %v\n", i+1, err)
 				continue
@@ -299,9 +299,9 @@ var reportCmd = &cobra.Command{
 
 		// -------  内核参数信息 begin  --------
 		fmt.Println("开始检查主机 - 【内核参数】")
-		kernelreporterInstance := kernelreporter.KernelReporter{}
+		kernelcheckerInstance := kernelchecker.KernelChecker{}
 
-		list, sumary, err := kernelreporterInstance.GetKernelParamList()
+		list, sumary, err := kernelcheckerInstance.GetKernelParamList()
 		if err != nil {
 			cmd.PrintErrf("获取内核参数列表失败: %v\n", err)
 		}
@@ -313,18 +313,18 @@ var reportCmd = &cobra.Command{
 		// -------  网络IO begin  --------
 		fmt.Println("开始检查主机 - 【网络信息】")
 
-		netreporterInstance := netreporter.NetReporter{}
+		netcheckerInstance := netchecker.NetChecker{}
 
-		ifacelist, err := netreporterInstance.GetNetworkInterfaceList()
+		ifacelist, err := netcheckerInstance.GetNetworkInterfaceList()
 		if err != nil {
 			cmd.PrintErrf("获取网络接口列表失败: %v\n", err)
 		}
 		reportData.NetworkInterfaceList = ifacelist
 
-		var net_io_results []netreporter.NetworkInterfaceStats
+		var net_io_results []netchecker.NetworkInterfaceStats
 		// 循环调用函数 5 次，并将结果保存到数组中
 		for i := 0; i < checkCount; i++ {
-			info, err := netreporterInstance.GetNetworkStatsList()
+			info, err := netcheckerInstance.GetNetworkStatsList()
 			if err != nil {
 				cmd.PrintErrf("第%d次获取网络流量信息失败: %v\n", i+1, err)
 				continue

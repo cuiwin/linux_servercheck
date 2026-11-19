@@ -604,6 +604,11 @@ func (c *LoadChecker) GetDetail() (CpuLoadDetail, error) {
 		cpuIssues = append(cpuIssues, fmt.Sprintf("用户态CPU使用率偏高(%.1f%%)", ret_cpu_usage.User))
 	}
 
+	if ret_cpu_usage.System >= config.CpuSystemPercent {
+		cpuStatus = "warning"
+		cpuIssues = append(cpuIssues, fmt.Sprintf("内核态CPU使用率偏高(%.1f%%)", ret_cpu_usage.System))
+	}
+
 	// CPU 阈值触发时定位占用最高的进程，便于直接排查热点
 	var topProcs []ProcCpuUsage
 	if cpuStatus != "info" {

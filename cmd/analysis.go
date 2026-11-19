@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cuiwin/linux_server_check/checker/hostchecker"
 	"github.com/cuiwin/linux_server_check/checker/loadchecker"
 	"github.com/cuiwin/linux_server_check/config"
-	"github.com/cuiwin/linux_server_check/reporter/hostreporter"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -34,7 +34,7 @@ var analysisCmd = &cobra.Command{
 			wg sync.WaitGroup
 			mu sync.Mutex
 
-			hostInfo       hostreporter.HostInfo
+			hostInfo       hostchecker.HostInfo
 			hostErr        error
 			cpuLoadResults []loadchecker.CpuLoadDetail
 		)
@@ -52,8 +52,8 @@ var analysisCmd = &cobra.Command{
 
 		// 主机信息
 		collect("主机信息", func() {
-			hostReporter := hostreporter.HostReporter{}
-			hostInfo, hostErr = hostReporter.GetHostInfo()
+			hostChecker := hostchecker.HostChecker{}
+			hostInfo, hostErr = hostChecker.GetHostInfo()
 		})
 
 		// CPU负载
@@ -195,7 +195,7 @@ var analysisCmd = &cobra.Command{
 					i+1,
 					cell("%.1f", 7, r.CpuUsage.Total, c),
 					cell("%.1f", 7, r.CpuUsage.User, grade(r.CpuUsage.User, config.CpuUserPercent)),
-					cell("%.1f", 7, r.CpuUsage.System, green),
+					cell("%.1f", 7, r.CpuUsage.System, grade(r.CpuUsage.System, config.CpuSystemPercent)),
 					cell("%.1f", 6, r.CpuUsage.Nice, green),
 					cell("%.1f", 7, r.CpuUsage.Idle, green),
 					cell("%.1f", 7, r.CpuUsage.Iowait, grade(r.CpuUsage.Iowait, config.CpuIowaitPercent)),

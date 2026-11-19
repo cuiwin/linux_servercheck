@@ -1,4 +1,4 @@
-package kernelreporter
+package kernelchecker
 
 import (
 	"bufio"
@@ -34,12 +34,12 @@ type ComparisonSummary struct {
 var templateContent []byte
 
 // Checker 结构体定义
-type KernelReporter struct {
+type KernelChecker struct {
 	// 这里可以添加 Checker 结构体的字段
 }
 
 // 获取内核参数列表
-func (c *KernelReporter) GetKernelParamList() ([]KernelParam, ComparisonSummary, error) {
+func (c *KernelChecker) GetKernelParamList() ([]KernelParam, ComparisonSummary, error) {
 
 	// 解析嵌入的模板内容
 	templateParams, err := parseTemplateContent(templateContent)

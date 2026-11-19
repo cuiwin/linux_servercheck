@@ -1,4 +1,4 @@
-package hostreporter
+package hostchecker
 
 import (
 	"fmt"
@@ -34,7 +34,7 @@ type HostInfo struct {
 }
 
 // Checker 结构体定义
-type HostReporter struct {
+type HostChecker struct {
 	// 这里可以添加 Checker 结构体的字段
 }
 
@@ -65,7 +65,7 @@ func getCoreNum() (int, error) {
 }
 
 // 获取主机信息
-func (c *HostReporter) GetHostInfo() (HostInfo, error) {
+func (c *HostChecker) GetHostInfo() (HostInfo, error) {
 
 	// gopsutil host
 	tempinfo, _ := host.Info()

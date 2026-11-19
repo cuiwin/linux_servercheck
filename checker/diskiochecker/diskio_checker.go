@@ -1,4 +1,4 @@
-package diskioreporter
+package diskiochecker
 
 import (
 	"bytes"
@@ -33,12 +33,12 @@ type DiskIOStats struct {
 }
 
 // Checker 结构体定义
-type DiskIOReporter struct {
+type DiskIOChecker struct {
 	// 这里可以添加 Checker 结构体的字段
 }
 
 // getDiskStats 执行iostat命令并解析结果
-func (c *DiskIOReporter) GetDiskStats(version string) ([]DiskIOStats, error) {
+func (c *DiskIOChecker) GetDiskStats(version string) ([]DiskIOStats, error) {
 	// 修改命令为 iostat -d -x 1 2 | awk '/Device:/{count++} count==2'
 	// 这里用第二次结果更准确
 	cmd := exec.Command("sh", "-c", "iostat -d -x 1 2 | awk '/Device/{count++} count==2' | grep -v Device")
@@ -66,7 +66,7 @@ func (c *DiskIOReporter) GetDiskStats(version string) ([]DiskIOStats, error) {
 }
 
 // 检测iostat版本
-func (c *DiskIOReporter) GetIostatVersion() (string, error) {
+func (c *DiskIOChecker) GetIostatVersion() (string, error) {
 	// 方法1: 尝试 rpm (CentOS/RHEL)
 	cmd := exec.Command("rpm", "-q", "sysstat")
 	output, err := cmd.CombinedOutput()

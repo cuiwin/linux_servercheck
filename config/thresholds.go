@@ -11,4 +11,5 @@ const (
 	CpuIowaitPercent  = 10  // IO 等待占用 CPU 百分比
 	CpuUsagePercent   = 85  // CPU 总使用率百分比
 	CpuUserPercent    = 85  // 用户态 CPU 使用率百分比
+	CpuSystemPercent  = 20  // 内核态 CPU 使用率百分比
 )

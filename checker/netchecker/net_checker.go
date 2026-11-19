@@ -1,4 +1,4 @@
-package netreporter
+package netchecker
 
 import (
 	"bufio"
@@ -35,12 +35,12 @@ type NetworkInterfaceStats struct {
 }
 
 // Checker 结构体定义
-type NetReporter struct {
+type NetChecker struct {
 	// 这里可以添加 Checker 结构体的字段
 }
 
 // 获取网卡信息
-func (c *NetReporter) GetNetworkInterfaceList() ([]NetworkInterface, error) {
+func (c *NetChecker) GetNetworkInterfaceList() ([]NetworkInterface, error) {
 
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -84,7 +84,7 @@ func (c *NetReporter) GetNetworkInterfaceList() ([]NetworkInterface, error) {
 }
 
 // GetNetworkStats 执行sar命令并解析结果
-func (c *NetReporter) GetNetworkStatsList() ([]NetworkInterfaceStats, error) {
+func (c *NetChecker) GetNetworkStatsList() ([]NetworkInterfaceStats, error) {
 	// 执行sar命令获取网络接口统计信息
 	cmd := exec.Command("sar", "-n", "DEV", "1", "1")
 	output, err := cmd.CombinedOutput()

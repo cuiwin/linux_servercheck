@@ -12,6 +12,10 @@ linux_server_check/
 │   ├── loadchecker/  # 负载检查器
 │   ├── memchecker/   # 内存检查器
 │   ├── diskchecker/  # 磁盘检查器
+│   ├── diskiochecker/ # 磁盘IO检查器
+│   ├── hostchecker/  # 主机信息检查器
+│   ├── kernelchecker/ # 内核参数检查器
+│   ├── netchecker/   # 网络检查器
 │   └── threadchecker/# 线程检查器
 ├── cmd/              # CLI 命令（Cobra）
 │   ├── root.go       # 根命令
