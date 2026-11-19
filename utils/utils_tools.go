@@ -30,6 +30,25 @@ func GetLocalIP() (string, error) {
 	return "", fmt.Errorf("未找到非回环IPv4地址")
 }
 
+// FormatSize 将字节数格式化为带单位的可读字符串（B/KB/MB/GB）
+func FormatSize(size uint64) string {
+	const (
+		kb = 1024
+		mb = 1024 * kb
+		gb = 1024 * mb
+	)
+	switch {
+	case size >= gb:
+		return fmt.Sprintf("%.2fGB", float64(size)/gb)
+	case size >= mb:
+		return fmt.Sprintf("%.2fMB", float64(size)/mb)
+	case size >= kb:
+		return fmt.Sprintf("%.2fKB", float64(size)/kb)
+	default:
+		return fmt.Sprintf("%.2fB", float64(size))
+	}
+}
+
 // 打印表格
 func PrintTable(header []string, data [][]string) {
 	table := tablewriter.NewWriter(os.Stdout)

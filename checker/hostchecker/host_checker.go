@@ -2,12 +2,12 @@ package hostchecker
 
 import (
 	"fmt"
-	"log"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/cuiwin/linux_server_check/config"
 	"github.com/cuiwin/linux_server_check/utils"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -66,42 +66,49 @@ func getCoreNum() (int, error) {
 
 // 获取主机信息
 func (c *HostChecker) GetHostInfo() (HostInfo, error) {
+	var hostinfo HostInfo
 
 	// gopsutil host
-	tempinfo, _ := host.Info()
+	tempinfo, err := host.Info()
+	if err != nil {
+		return hostinfo, fmt.Errorf("获取主机信息失败: %w", err)
+	}
 
 	// gopsutils cpu
-	tempcpu, _ := cpu.Info()
+	tempcpu, err := cpu.Info()
+	if err != nil {
+		return hostinfo, fmt.Errorf("获取CPU信息失败: %w", err)
+	}
 	modelName := tempcpu[0].ModelName
 
 	cpuCount, err := getCoreNum()
 	if err != nil {
-		fmt.Println("获取CPU核心数量失败:", err)
+		return hostinfo, fmt.Errorf("获取CPU核心数量失败: %w", err)
 	}
 
 	// 获取系统内存信息
 	memusage, err := mem.VirtualMemory()
 	if err != nil {
-		log.Fatalf("获取内存信息失败: %v", err)
+		return hostinfo, fmt.Errorf("获取内存信息失败: %w", err)
 	}
 	// fmt.Printf("系统内存总量: %.2f GB\n", float64(memusage.Total)/(1024*1024*1024))
 
-	// 获取/data目录挂载磁盘信息
-	usage, err := disk.Usage("/data")
+	// 获取数据盘挂载目录信息
+	usage, err := disk.Usage(config.DataDiskPath)
 	if err != nil {
-		log.Fatalf("获取磁盘信息失败: %v", err)
+		return hostinfo, fmt.Errorf("获取数据盘(%s)信息失败: %w", config.DataDiskPath, err)
 	}
 	// fmt.Printf("/data目录挂载磁盘总量: %.2f GB\n", float64(usage.Total)/(1024*1024*1024))
 
 	// 获取IP地址
 	ipaddr, err := utils.GetLocalIP()
 	if err != nil {
-		log.Fatalf("获取IP信息失败: %v", err)
+		return hostinfo, fmt.Errorf("获取IP信息失败: %w", err)
 	}
 
 	bootTime := time.Unix(int64(tempinfo.BootTime), 0)
 
-	hostinfo := HostInfo{
+	hostinfo = HostInfo{
 		Hostname:        tempinfo.Hostname,
 		KernelArch:      tempinfo.KernelArch,
 		KernelVersion:   tempinfo.KernelVersion,

@@ -12,4 +12,25 @@ const (
 	CpuUsagePercent   = 85  // CPU 总使用率百分比
 	CpuUserPercent    = 85  // 用户态 CPU 使用率百分比
 	CpuSystemPercent  = 20  // 内核态 CPU 使用率百分比
+
+	// 磁盘
+	DiskUsagePercent  = 85           // 磁盘空间使用率百分比
+	DiskUsageHighDesc = "使用率偏高"      // 磁盘空间使用率超过阈值时的描述
+	DiskInodePercent  = 85           // 磁盘 inode 使用率百分比
+	DiskInodeHighDesc = "Inode使用率偏高" // 磁盘 inode 使用率超过阈值时的描述
+
+	// 磁盘 IO
+	DiskIOUtilPercent = 90     // 磁盘 IO 利用率百分比
+	DiskIOBusyDesc    = "IO繁忙" // 磁盘 IO 利用率超过阈值时的描述
+
+	// 内存
+	MemUsagePercent  = 85          // 内存使用率百分比
+	MemUsageHighDesc = "内存使用率超过阈值" // 内存使用率超过阈值时的描述
+	MemTopProcN      = 5           // 内存告警时展示的进程数
+	MemTopProcRatio  = 0.5         // TOP 进程 RSS 合计占已用内存的比例，低于该值说明主因不在用户进程
+)
+
+// 采集路径
+const (
+	DataDiskPath = "/data" // 数据盘挂载点，用于统计数据盘总量
 )

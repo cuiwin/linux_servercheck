@@ -11,8 +11,7 @@ linux_server_check/
 ├── checker/          # 业务逻辑（各种检查器）
 │   ├── loadchecker/  # 负载检查器
 │   ├── memchecker/   # 内存检查器
-│   ├── diskchecker/  # 磁盘检查器
-│   ├── diskiochecker/ # 磁盘IO检查器
+│   ├── diskchecker/  # 磁盘检查器（磁盘使用率 + 磁盘IO）
 │   ├── hostchecker/  # 主机信息检查器
 │   ├── kernelchecker/ # 内核参数检查器
 │   ├── netchecker/   # 网络检查器

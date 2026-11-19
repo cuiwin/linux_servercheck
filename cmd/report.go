@@ -6,16 +6,15 @@ package cmd
 import (
 	"embed"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"sync"
 	"text/template"
 	"time"
 
 	"github.com/cuiwin/linux_server_check/checker/diskchecker"
-	"github.com/cuiwin/linux_server_check/checker/diskiochecker"
 	"github.com/cuiwin/linux_server_check/checker/hostchecker"
 	"github.com/cuiwin/linux_server_check/checker/kernelchecker"
 	"github.com/cuiwin/linux_server_check/checker/loadchecker"
@@ -38,10 +37,10 @@ type ReportData struct {
 	HostInfo                  hostchecker.HostInfo               `json:"HostInfo"`
 	Timestamp                 string                             `json:"timestamp"`
 	DiskUsageList             []diskchecker.DiskUsage            `json:"diskUsageList"`
+	DiskIOStatsList           []diskchecker.DiskIOStats          `json:"diskIOStatsList"`
 	CpuLoadDetailList         []loadchecker.CpuLoadDetail        `json:"cpuLoadDetailList"`
 	CtxtSummary               loadchecker.CtxtSwitchStat         `json:"ctxtSummary"`
 	MemDetailList             []*memchecker.MemDetail            `json:"memDetailList"`
-	DiskIOStatsList           []diskiochecker.DiskIOStats        `json:"diskIOStatsList"`
 	KernelParamList           []kernelchecker.KernelParam        `json:"kernelParamList"`
 	KernelComparisonSummary   kernelchecker.ComparisonSummary    `json:"kernelComparisonSummary"`
 	NetworkInterfaceList      []netchecker.NetworkInterface      `json:"networkInterfaceList"`
@@ -198,147 +197,203 @@ var reportCmd = &cobra.Command{
 			Timestamp: timestamp,
 		}
 
+		// 各检查项之间相互独立，使用 goroutine 并发执行；
+		// 每个 goroutine 只写 reportData 的不同字段，互不干扰
+		var wg sync.WaitGroup
+
+		// 并发场景下统一输出错误，避免多 goroutine 同时写终端导致内容交错
+		var printMu sync.Mutex
+		printErr := func(format string, args ...interface{}) {
+			printMu.Lock()
+			defer printMu.Unlock()
+			cmd.PrintErrf(format, args...)
+		}
+
+		var hostErr error
+
 		// -------  主机信息 begin  --------
 		fmt.Println("开始检查主机 - 【主机信息】")
-		hostcheckerInstance := hostchecker.HostChecker{}
-		hostInfo, err := hostcheckerInstance.GetHostInfo()
-		if err != nil {
-			cmd.PrintErrf("获取主机信息失败: %v\n", err)
-			return
-		}
-		reportData.HostInfo = hostInfo
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			hostcheckerInstance := hostchecker.HostChecker{}
+			hostInfo, err := hostcheckerInstance.GetHostInfo()
+			if err != nil {
+				hostErr = err
+				printErr("获取主机信息失败: %v\n", err)
+				return
+			}
+			reportData.HostInfo = hostInfo
+		}()
 
 		// -------  主机信息 end  --------
 
 		// -------  磁盘信息 begin  --------
 		fmt.Println("开始检查主机 - 【磁盘信息】")
-		diskcheckerInstance := diskchecker.DiskChecker{}
-		disk_usage_list, err := diskcheckerInstance.GetDiskUsageInfo()
-		if err != nil {
-			cmd.PrintErrf("获取磁盘使用信息失败: %v\n", err)
-		}
-		reportData.DiskUsageList = disk_usage_list
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			diskcheckerInstance := diskchecker.DiskChecker{}
+			diskUsageList, err := diskcheckerInstance.GetDiskUsageInfo()
+			if err != nil {
+				printErr("获取磁盘使用信息失败: %v\n", err)
+			}
+			reportData.DiskUsageList = diskUsageList
+		}()
 
 		// -------  磁盘信息 end  --------
 
 		// -------  负载信息 begin  --------
 		fmt.Println("开始检查主机 - 【负载信息】")
-		var results []loadchecker.CpuLoadDetail
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		loadcheckerInstance := loadchecker.LoadChecker{}
+			// 采样必须串行：ctxt 差值依赖上一帧快照，且相邻采样需要 1 秒间隔
+			var results []loadchecker.CpuLoadDetail
+			loadcheckerInstance := loadchecker.LoadChecker{}
 
-		// 循环调用函数 5 次，并将结果保存到数组中
-		for i := 0; i < checkCount; i++ {
+			// 循环调用函数 5 次，并将结果保存到数组中
+			for i := 0; i < checkCount; i++ {
 
-			info, err := loadcheckerInstance.GetDetail()
-			if err != nil {
-				log.Printf("第%d次获取CPU负载失败: %v", i+1, err)
-				continue
+				info, err := loadcheckerInstance.GetDetail()
+				if err != nil {
+					printErr("第%d次获取CPU负载失败: %v\n", i+1, err)
+					continue
+				}
+				results = append(results, info)
+
+				// 上下文切换是累计值，需要相邻两次采样做差才有速率，因此留出 1 秒采样间隔
+				if i < checkCount-1 {
+					time.Sleep(time.Second)
+				}
 			}
-			results = append(results, info)
-
-			// 上下文切换是累计值，需要相邻两次采样做差才有速率，因此留出 1 秒采样间隔
-			if i < checkCount-1 {
-				time.Sleep(time.Second)
+			reportData.CpuLoadDetailList = results
+			if len(results) > 0 {
+				reportData.CtxtSummary = results[len(results)-1].Ctxt
 			}
-		}
-		reportData.CpuLoadDetailList = results
-		if len(results) > 0 {
-			reportData.CtxtSummary = results[len(results)-1].Ctxt
-		}
+		}()
 
 		// -------  负载信息 end  --------
 
 		// -------  内存信息 begin  --------
 		fmt.Println("开始检查主机 - 【内存信息】")
-		var mem_results []*memchecker.MemDetail
-		memcheckerInstance := memchecker.MemChecker{}
-		// 循环调用函数 5 次，并将结果保存到数组中
-		for i := 0; i < checkCount; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var memResults []*memchecker.MemDetail
+			// 循环调用函数 5 次，并将结果保存到数组中
+			for i := 0; i < checkCount; i++ {
 
-			info, err := memcheckerInstance.GetDetail()
-			if err != nil {
-				log.Printf("第%d次获取内存信息失败: %v", i+1, err)
-				continue
+				// 进程级下钻只在最后一次采样时执行，避免连续多次执行 ps
+				memcheckerInstance := memchecker.MemChecker{SkipTopProcs: i < checkCount-1}
+				info, err := memcheckerInstance.GetDetail()
+				if err != nil {
+					printErr("第%d次获取内存信息失败: %v\n", i+1, err)
+					continue
+				}
+				memResults = append(memResults, info)
 			}
-			mem_results = append(mem_results, info)
-		}
-		reportData.MemDetailList = mem_results
+			reportData.MemDetailList = memResults
+		}()
+
 		// -------  内存信息 end  --------
 
 		// -------  磁盘IO信息 begin  --------
 		fmt.Println("开始检查主机 - 【磁盘IO】")
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		var disk_io_results []diskiochecker.DiskIOStats
-		diskiocheckerInstance := diskiochecker.DiskIOChecker{}
+			var diskIOResults []diskchecker.DiskIOStats
+			diskiocheckerInstance := diskchecker.DiskIOChecker{}
 
-		// 先获取iostat版本
-		version, err := diskiocheckerInstance.GetIostatVersion()
-		if err != nil {
-			cmd.PrintErrf("获取iostat版本失败: %v\n", err)
-		}
-		fmt.Printf("获取iostat命令版本: %v\n", version)
-
-		// 循环调用函数 5 次，并将结果保存到数组中
-		for i := 0; i < checkCount; i++ {
-			info, err := diskiocheckerInstance.GetDiskStats(version)
+			// 先获取iostat版本
+			version, err := diskiocheckerInstance.GetIostatVersion()
 			if err != nil {
-				cmd.PrintErrf("第%d次获取磁盘IO信息失败: %v\n", i+1, err)
-				continue
+				printErr("获取iostat版本失败: %v\n", err)
 			}
-			disk_io_results = append(disk_io_results, info...)
-		}
+			fmt.Printf("获取iostat命令版本: %v\n", version)
 
-		// 排序
-		sort.Slice(disk_io_results, func(i, j int) bool {
-			return disk_io_results[i].Device < disk_io_results[j].Device
-		})
+			// 循环调用函数 5 次，并将结果保存到数组中
+			for i := 0; i < checkCount; i++ {
+				info, err := diskiocheckerInstance.GetDiskStats(version)
+				if err != nil {
+					printErr("第%d次获取磁盘IO信息失败: %v\n", i+1, err)
+					continue
+				}
+				diskIOResults = append(diskIOResults, info...)
+			}
 
-		reportData.DiskIOStatsList = disk_io_results
+			// 排序
+			sort.Slice(diskIOResults, func(i, j int) bool {
+				return diskIOResults[i].Device < diskIOResults[j].Device
+			})
+
+			reportData.DiskIOStatsList = diskIOResults
+		}()
+
 		// -------  磁盘IO信息  end   --------
 
 		// -------  内核参数信息 begin  --------
 		fmt.Println("开始检查主机 - 【内核参数】")
-		kernelcheckerInstance := kernelchecker.KernelChecker{}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			kernelcheckerInstance := kernelchecker.KernelChecker{}
 
-		list, sumary, err := kernelcheckerInstance.GetKernelParamList()
-		if err != nil {
-			cmd.PrintErrf("获取内核参数列表失败: %v\n", err)
-		}
-		reportData.KernelParamList = list
-		reportData.KernelComparisonSummary = sumary
+			list, summary, err := kernelcheckerInstance.GetKernelParamList()
+			if err != nil {
+				printErr("获取内核参数列表失败: %v\n", err)
+			}
+			reportData.KernelParamList = list
+			reportData.KernelComparisonSummary = summary
+		}()
 
 		// -------  内核参数信息 end  --------
 
 		// -------  网络IO begin  --------
 		fmt.Println("开始检查主机 - 【网络信息】")
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 
-		netcheckerInstance := netchecker.NetChecker{}
+			netcheckerInstance := netchecker.NetChecker{}
 
-		ifacelist, err := netcheckerInstance.GetNetworkInterfaceList()
-		if err != nil {
-			cmd.PrintErrf("获取网络接口列表失败: %v\n", err)
-		}
-		reportData.NetworkInterfaceList = ifacelist
-
-		var net_io_results []netchecker.NetworkInterfaceStats
-		// 循环调用函数 5 次，并将结果保存到数组中
-		for i := 0; i < checkCount; i++ {
-			info, err := netcheckerInstance.GetNetworkStatsList()
+			ifaceList, err := netcheckerInstance.GetNetworkInterfaceList()
 			if err != nil {
-				cmd.PrintErrf("第%d次获取网络流量信息失败: %v\n", i+1, err)
-				continue
+				printErr("获取网络接口列表失败: %v\n", err)
 			}
-			net_io_results = append(net_io_results, info...)
-		}
+			reportData.NetworkInterfaceList = ifaceList
 
-		// 根据网卡名称排序
-		sort.Slice(net_io_results, func(i, j int) bool {
-			return net_io_results[i].Interface < net_io_results[j].Interface
-		})
+			var netIOResults []netchecker.NetworkInterfaceStats
+			// 循环调用函数 5 次，并将结果保存到数组中
+			for i := 0; i < checkCount; i++ {
+				info, err := netcheckerInstance.GetNetworkStatsList()
+				if err != nil {
+					printErr("第%d次获取网络流量信息失败: %v\n", i+1, err)
+					continue
+				}
+				netIOResults = append(netIOResults, info...)
+			}
 
-		reportData.NetworkInterfaceStatsList = net_io_results
+			// 根据网卡名称排序
+			sort.Slice(netIOResults, func(i, j int) bool {
+				return netIOResults[i].Interface < netIOResults[j].Interface
+			})
+
+			reportData.NetworkInterfaceStatsList = netIOResults
+		}()
+
 		// -------  网络信息IO end  --------
+
+		// 等待所有检查项完成
+		wg.Wait()
+
+		// 主机信息是报告内容和文件名的基础，获取失败则不生成报告
+		if hostErr != nil {
+			return
+		}
 
 		// -------  信息汇总 begin  --------
 		fmt.Println("开始检查主机 - 【信息汇总】")
@@ -351,11 +406,20 @@ var reportCmd = &cobra.Command{
 			"Percent": func(value float64) string {
 				return strconv.FormatFloat(value*100, 'f', 1, 64) + "%"
 			},
+			// 取最近一次带进程级下钻结果的内存采样，用于渲染 TOP N 区块
+			"MemProcDetail": func(list []*memchecker.MemDetail) *memchecker.MemDetail {
+				for i := len(list) - 1; i >= 0; i-- {
+					if list[i] != nil && len(list[i].TopMemProcs) > 0 {
+						return list[i]
+					}
+				}
+				return nil
+			},
 			// 可以添加更多自定义函数...
 		})
 
 		// 解析嵌入的 HTML 模板
-		tmpl, err = tmpl.ParseFS(templateFS, "templates/server_inspection.html")
+		tmpl, err := tmpl.ParseFS(templateFS, "templates/server_inspection.html")
 		if err != nil {
 			cmd.PrintErrf("解析模板失败: %v\n", err)
 			return
